@@ -239,25 +239,82 @@ bool SolveConstraints() {
             int remaining_mines_first = mine_count - marked;
             int remaining_mines_second = neighbor_mines - n_marked;
 
-            // If all mines in first are in common area, unique areas are safe
-            if (remaining_mines_first == common_count && unique_first_count > 0) {
-              for (int r = 0; r < rows; r++) {
-                for (int c = 0; c < columns; c++) {
-                  if (unique_to_first[r][c]) {
-                    Execute(r, c, 0);
-                    return true;
+            // Subset reasoning: if first's unknowns are subset of second's unknowns
+            if (unique_first_count == 0 && unique_second_count > 0) {
+              // First's unknowns ⊆ Second's unknowns
+              // If first needs all its unknowns to be mines, second's unique cells are safe
+              if (remaining_mines_first == common_count && unique_second_count > 0) {
+                for (int r = 0; r < rows; r++) {
+                  for (int c = 0; c < columns; c++) {
+                    if (unique_to_second[r][c]) {
+                      Execute(r, c, 0);
+                      return true;
+                    }
+                  }
+                }
+              }
+              // If first needs no mines, all second's unique must have all remaining mines
+              if (remaining_mines_first == 0 && unique_second_count > 0 &&
+                  remaining_mines_second == unique_second_count) {
+                for (int r = 0; r < rows; r++) {
+                  for (int c = 0; c < columns; c++) {
+                    if (unique_to_second[r][c]) {
+                      Execute(r, c, 1);
+                      return true;
+                    }
                   }
                 }
               }
             }
 
-            // Similar for second number
-            if (remaining_mines_second == common_count && unique_second_count > 0) {
-              for (int r = 0; r < rows; r++) {
-                for (int c = 0; c < columns; c++) {
-                  if (unique_to_second[r][c]) {
-                    Execute(r, c, 0);
-                    return true;
+            // Symmetric case: second's unknowns ⊆ first's unknowns
+            if (unique_second_count == 0 && unique_first_count > 0) {
+              if (remaining_mines_second == common_count && unique_first_count > 0) {
+                for (int r = 0; r < rows; r++) {
+                  for (int c = 0; c < columns; c++) {
+                    if (unique_to_first[r][c]) {
+                      Execute(r, c, 0);
+                      return true;
+                    }
+                  }
+                }
+              }
+              if (remaining_mines_second == 0 && unique_first_count > 0 &&
+                  remaining_mines_first == unique_first_count) {
+                for (int r = 0; r < rows; r++) {
+                  for (int c = 0; c < columns; c++) {
+                    if (unique_to_first[r][c]) {
+                      Execute(r, c, 1);
+                      return true;
+                    }
+                  }
+                }
+              }
+            }
+
+            // General case: overlapping sets with difference reasoning
+            if (unique_first_count > 0 && unique_second_count > 0 && common_count > 0) {
+              // If difference in mine counts equals difference in unique cells
+              int mine_diff = remaining_mines_second - remaining_mines_first;
+              if (mine_diff == unique_second_count && mine_diff > 0) {
+                // All unique to second are mines
+                for (int r = 0; r < rows; r++) {
+                  for (int c = 0; c < columns; c++) {
+                    if (unique_to_second[r][c]) {
+                      Execute(r, c, 1);
+                      return true;
+                    }
+                  }
+                }
+              }
+              if (mine_diff == 0 && unique_first_count == unique_second_count) {
+                // Common cells have same mine distribution, unique cells are safe
+                for (int r = 0; r < rows; r++) {
+                  for (int c = 0; c < columns; c++) {
+                    if (unique_to_first[r][c] || unique_to_second[r][c]) {
+                      Execute(r, c, 0);
+                      return true;
+                    }
                   }
                 }
               }
@@ -272,23 +329,65 @@ bool SolveConstraints() {
 
 // Last resort: make an educated guess
 void MakeGuess() {
-  // Find the safest unknown cell (corner or edge cells are often safer)
+  // Strategy: prefer cells adjacent to revealed numbers with lowest mine probability
   int best_r = -1, best_c = -1;
-  int min_adjacent_unknown = 999;
+  double min_probability = 10.0;
 
   for (int i = 0; i < rows; i++) {
     for (int j = 0; j < columns; j++) {
       if (client_map[i][j] == '?') {
-        int unknown, marked, total_adj;
-        CountAdjacent(i, j, unknown, marked, total_adj);
+        // Check if this cell is adjacent to any revealed number
+        bool adjacent_to_number = false;
+        double probability_sum = 0.0;
+        int probability_count = 0;
 
-        // Prefer cells with fewer unknown neighbors (more information)
-        if (unknown < min_adjacent_unknown) {
-          min_adjacent_unknown = unknown;
-          best_r = i;
-          best_c = j;
+        for (int dr = -1; dr <= 1; dr++) {
+          for (int dc = -1; dc <= 1; dc++) {
+            if (dr == 0 && dc == 0) continue;
+            int nr = i + dr;
+            int nc = j + dc;
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < columns) {
+              if (client_map[nr][nc] >= '0' && client_map[nr][nc] <= '8') {
+                adjacent_to_number = true;
+                // Calculate probability this cell is a mine based on this number
+                int mine_count = client_map[nr][nc] - '0';
+                int unknown, marked, total_adj;
+                CountAdjacent(nr, nc, unknown, marked, total_adj);
+                if (unknown > 0) {
+                  double prob = (double)(mine_count - marked) / unknown;
+                  probability_sum += prob;
+                  probability_count++;
+                }
+              }
+            }
+          }
+        }
+
+        // Only consider cells adjacent to revealed numbers
+        if (adjacent_to_number && probability_count > 0) {
+          double avg_probability = probability_sum / probability_count;
+          // Prefer cells with lower mine probability
+          if (avg_probability < min_probability) {
+            min_probability = avg_probability;
+            best_r = i;
+            best_c = j;
+          }
         }
       }
+    }
+  }
+
+  // If no good guess found, pick any unknown cell
+  if (best_r == -1) {
+    for (int i = 0; i < rows; i++) {
+      for (int j = 0; j < columns; j++) {
+        if (client_map[i][j] == '?') {
+          best_r = i;
+          best_c = j;
+          break;
+        }
+      }
+      if (best_r != -1) break;
     }
   }
 

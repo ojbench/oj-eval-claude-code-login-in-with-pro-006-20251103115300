@@ -327,20 +327,68 @@ bool SolveConstraints() {
   return false;
 }
 
+// Calculate mine probability for a cell more accurately
+double CalculateMineProbability(int r, int c) {
+  if (client_map[r][c] != '?') return 2.0; // Invalid
+
+  // Find all adjacent revealed numbers
+  double max_prob = 0.0;
+  double min_prob = 1.0;
+  int constraint_count = 0;
+
+  for (int dr = -1; dr <= 1; dr++) {
+    for (int dc = -1; dc <= 1; dc++) {
+      if (dr == 0 && dc == 0) continue;
+      int nr = r + dr;
+      int nc = c + dc;
+      if (nr >= 0 && nr < rows && nc >= 0 && nc < columns) {
+        if (client_map[nr][nc] >= '0' && client_map[nr][nc] <= '8') {
+          int mine_count = client_map[nr][nc] - '0';
+          int unknown, marked, total_adj;
+          CountAdjacent(nr, nc, unknown, marked, total_adj);
+          if (unknown > 0) {
+            double prob = (double)(mine_count - marked) / unknown;
+            max_prob = (prob > max_prob) ? prob : max_prob;
+            min_prob = (prob < min_prob) ? prob : min_prob;
+            constraint_count++;
+          }
+        }
+      }
+    }
+  }
+
+  if (constraint_count == 0) {
+    // No constraints, use global probability
+    int total_unknown = 0;
+    int total_unmarked_mines = total_mines;
+    for (int i = 0; i < rows; i++) {
+      for (int j = 0; j < columns; j++) {
+        if (client_map[i][j] == '?') total_unknown++;
+        if (client_map[i][j] == '@') total_unmarked_mines--;
+      }
+    }
+    if (total_unknown > 0) {
+      return (double)total_unmarked_mines / total_unknown;
+    }
+    return 0.5;
+  }
+
+  // Use the most pessimistic probability (highest risk)
+  return max_prob;
+}
+
 // Last resort: make an educated guess
 void MakeGuess() {
-  // Strategy: prefer cells adjacent to revealed numbers with lowest mine probability
+  // Strategy: prefer cells with lowest mine probability
   int best_r = -1, best_c = -1;
   double min_probability = 10.0;
+  int best_adjacency = -1; // Prefer cells with more adjacent numbers (more info)
 
   for (int i = 0; i < rows; i++) {
     for (int j = 0; j < columns; j++) {
       if (client_map[i][j] == '?') {
-        // Check if this cell is adjacent to any revealed number
-        bool adjacent_to_number = false;
-        double probability_sum = 0.0;
-        int probability_count = 0;
-
+        // Count adjacent revealed numbers
+        int adjacent_numbers = 0;
         for (int dr = -1; dr <= 1; dr++) {
           for (int dc = -1; dc <= 1; dc++) {
             if (dr == 0 && dc == 0) continue;
@@ -348,46 +396,51 @@ void MakeGuess() {
             int nc = j + dc;
             if (nr >= 0 && nr < rows && nc >= 0 && nc < columns) {
               if (client_map[nr][nc] >= '0' && client_map[nr][nc] <= '8') {
-                adjacent_to_number = true;
-                // Calculate probability this cell is a mine based on this number
-                int mine_count = client_map[nr][nc] - '0';
-                int unknown, marked, total_adj;
-                CountAdjacent(nr, nc, unknown, marked, total_adj);
-                if (unknown > 0) {
-                  double prob = (double)(mine_count - marked) / unknown;
-                  probability_sum += prob;
-                  probability_count++;
-                }
+                adjacent_numbers++;
               }
             }
           }
         }
 
-        // Only consider cells adjacent to revealed numbers
-        if (adjacent_to_number && probability_count > 0) {
-          double avg_probability = probability_sum / probability_count;
-          // Prefer cells with lower mine probability
-          if (avg_probability < min_probability) {
-            min_probability = avg_probability;
+        // Only consider cells with at least one adjacent number
+        if (adjacent_numbers > 0) {
+          double prob = CalculateMineProbability(i, j);
+
+          // Prefer lower probability, break ties with more adjacent numbers
+          if (prob < min_probability ||
+              (prob == min_probability && adjacent_numbers > best_adjacency)) {
+            min_probability = prob;
             best_r = i;
             best_c = j;
+            best_adjacency = adjacent_numbers;
           }
         }
       }
     }
   }
 
-  // If no good guess found, pick any unknown cell
+  // If no cell adjacent to numbers, pick any unknown
   if (best_r == -1) {
+    // Try to pick a corner or edge cell (often safer)
     for (int i = 0; i < rows; i++) {
       for (int j = 0; j < columns; j++) {
         if (client_map[i][j] == '?') {
-          best_r = i;
-          best_c = j;
-          break;
+          // Prefer corners, then edges, then center
+          bool is_corner = (i == 0 || i == rows-1) && (j == 0 || j == columns-1);
+          bool is_edge = (i == 0 || i == rows-1 || j == 0 || j == columns-1);
+
+          if (best_r == -1 || is_corner) {
+            best_r = i;
+            best_c = j;
+            if (is_corner) break;
+          } else if (is_edge && !is_corner) {
+            best_r = i;
+            best_c = j;
+          }
         }
       }
-      if (best_r != -1) break;
+      if (best_r != -1 && ((best_r == 0 || best_r == rows-1) &&
+                           (best_c == 0 || best_c == columns-1))) break;
     }
   }
 

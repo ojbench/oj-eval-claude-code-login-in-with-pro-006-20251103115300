@@ -11,7 +11,7 @@ extern int total_mines;  // The count of mines of the game map.
 // You MUST NOT use any other external variables except for rows, columns and total_mines.
 
 // Global variables for client
-char map[35][35];           // Current state of the map
+char client_map[35][35];           // Current state of the map
 bool known_mine[35][35];    // True if we know this is a mine
 bool known_safe[35][35];    // True if we know this is safe
 int revealed_count;         // Number of revealed cells
@@ -44,7 +44,7 @@ void InitGame() {
   // Initialize all global variables
   for (int i = 0; i < rows; i++) {
     for (int j = 0; j < columns; j++) {
-      map[i][j] = '?';
+      client_map[i][j] = '?';
       known_mine[i][j] = false;
       known_safe[i][j] = false;
     }
@@ -73,7 +73,7 @@ void ReadMap() {
     for (int j = 0; j < columns; j++) {
       char c;
       std::cin >> c;
-      map[i][j] = c;
+      client_map[i][j] = c;
 
       // Update knowledge
       if (c >= '0' && c <= '8') {
@@ -104,9 +104,9 @@ void CountAdjacent(int r, int c, int &unknown, int &marked, int &total_adj) {
       int nc = c + dc;
       if (nr >= 0 && nr < rows && nc >= 0 && nc < columns) {
         total_adj++;
-        if (map[nr][nc] == '?') {
+        if (client_map[nr][nc] == '?') {
           unknown++;
-        } else if (map[nr][nc] == '@') {
+        } else if (client_map[nr][nc] == '@') {
           marked++;
         }
       }
@@ -119,8 +119,8 @@ bool FindObviousMove() {
   // First pass: mark obvious mines and find obvious safe cells
   for (int i = 0; i < rows; i++) {
     for (int j = 0; j < columns; j++) {
-      if (map[i][j] >= '0' && map[i][j] <= '8') {
-        int mine_count = map[i][j] - '0';
+      if (client_map[i][j] >= '0' && client_map[i][j] <= '8') {
+        int mine_count = client_map[i][j] - '0';
         int unknown, marked, total_adj;
         CountAdjacent(i, j, unknown, marked, total_adj);
 
@@ -140,7 +140,7 @@ bool FindObviousMove() {
               int nr = i + dr;
               int nc = j + dc;
               if (nr >= 0 && nr < rows && nc >= 0 && nc < columns) {
-                if (map[nr][nc] == '?') {
+                if (client_map[nr][nc] == '?') {
                   Execute(nr, nc, 1);
                   return true;
                 }
@@ -159,8 +159,8 @@ bool SolveConstraints() {
   // Build constraint system and try to deduce cells
   for (int i = 0; i < rows; i++) {
     for (int j = 0; j < columns; j++) {
-      if (map[i][j] >= '0' && map[i][j] <= '8') {
-        int mine_count = map[i][j] - '0';
+      if (client_map[i][j] >= '0' && client_map[i][j] <= '8') {
+        int mine_count = client_map[i][j] - '0';
         int unknown, marked, total_adj;
         CountAdjacent(i, j, unknown, marked, total_adj);
 
@@ -172,9 +172,9 @@ bool SolveConstraints() {
             int ni = i + di;
             int nj = j + dj;
             if (ni < 0 || ni >= rows || nj < 0 || nj >= columns) continue;
-            if (map[ni][nj] < '0' || map[ni][nj] > '8') continue;
+            if (client_map[ni][nj] < '0' || client_map[ni][nj] > '8') continue;
 
-            int neighbor_mines = map[ni][nj] - '0';
+            int neighbor_mines = client_map[ni][nj] - '0';
             int n_unknown, n_marked, n_total;
             CountAdjacent(ni, nj, n_unknown, n_marked, n_total);
 
@@ -194,7 +194,7 @@ bool SolveConstraints() {
                 if (dr == 0 && dc == 0) continue;
                 int r1 = i + dr;
                 int c1 = j + dc;
-                if (r1 >= 0 && r1 < rows && c1 >= 0 && c1 < columns && map[r1][c1] == '?') {
+                if (r1 >= 0 && r1 < rows && c1 >= 0 && c1 < columns && client_map[r1][c1] == '?') {
                   bool is_common = false;
                   // Check if also around second number
                   for (int dr2 = -1; dr2 <= 1; dr2++) {
@@ -226,7 +226,7 @@ bool SolveConstraints() {
                 if (dr == 0 && dc == 0) continue;
                 int r2 = ni + dr;
                 int c2 = nj + dc;
-                if (r2 >= 0 && r2 < rows && c2 >= 0 && c2 < columns && map[r2][c2] == '?') {
+                if (r2 >= 0 && r2 < rows && c2 >= 0 && c2 < columns && client_map[r2][c2] == '?') {
                   if (!common_cells[r2][c2] && !unique_to_first[r2][c2]) {
                     unique_to_second[r2][c2] = true;
                     unique_second_count++;
@@ -278,7 +278,7 @@ void MakeGuess() {
 
   for (int i = 0; i < rows; i++) {
     for (int j = 0; j < columns; j++) {
-      if (map[i][j] == '?') {
+      if (client_map[i][j] == '?') {
         int unknown, marked, total_adj;
         CountAdjacent(i, j, unknown, marked, total_adj);
 
